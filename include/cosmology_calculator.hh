@@ -438,13 +438,15 @@ private:
         gsl_odeiv2_evolve_free (e);
         gsl_odeiv2_control_free (c);
         gsl_odeiv2_step_free (s);
-        
-        // Convert the temporary D' table to f and complete dot(Fc).
+
+        // Convert the temporarily stored D' to f=dlog(D)/dlog(a) on every
+        // rank. Transfer plug-ins may use f for rank-local velocity units.
         for (size_t i = 0; i < tab_a.size(); ++i)
         {
-            tab_dotFc[i] = tab_D[i] * tab_dotE[i] - tab_E[i] * tab_f[i];
+            tab_dotFc[i] = (tab_D[i] * tab_dotE[i] - tab_E[i] * tab_f[i]); // toma
             tab_f[i] = tab_f[i] / (tab_a[i] * H_of_a(tab_a[i]) * tab_D[i]);
         }
+        
     }
 
     void write_backscaling_diagnostics(config_file& cf) const
@@ -549,6 +551,9 @@ public:
 
         // set up transfer functions and compute normalisation
         transfer_function_ = std::move(select_TransferFunction_plugin(cf, cosmo_param_));
+        const double fHa_target_Mpc_inv = get_f(atarget_) * atarget_ * H_of_a(atarget_)
+                                         / (phys_const::c_SI / 1000.0);
+        transfer_function_->set_velocity_normalisation(fHa_target_Mpc_inv);
         transfer_function_->intialise();
         if( !transfer_function_->tf_isnormalised_ ){
             cosmo_param_.set("pnorm", this->compute_pnorm_from_sigma8() );
@@ -669,6 +674,7 @@ public:
                 const double dc  = dm - fb * dbc;
                 const double tm  = this->get_amplitude(k, delta_matter) * Dplus_start_ / Dplus_target_;
                 const double tbc = this->get_amplitude(k, theta_bc);
+                const double tbc_start = this->get_amplitude_theta_bc(k, true);
                 const double tb  = dm + fc * dbc;
                 const double tc  = dm - fb * dbc;
                 
@@ -680,7 +686,7 @@ public:
                     << std::setw(20) << std::setprecision(10) << tc / std::pow( Dplus_start_ / Dplus_target_, 0.5 )
                     << std::setw(20) << std::setprecision(10) << tb / std::pow( Dplus_start_ / Dplus_target_, 0.5 )
                     << std::setw(20) << std::setprecision(10) << tm / std::pow( Dplus_start_ / Dplus_target_, 0.5 )
-                    << std::setw(20) << std::setprecision(10) << tbc / std::pow( Dplus_start_ / Dplus_target_, 0.5 )
+                    << std::setw(20) << std::setprecision(10) << tbc_start
                     << std::endl;
             }
             if (ofs.fail()) {
